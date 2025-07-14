@@ -5,12 +5,10 @@ from typing import Dict, List
 import requests
 from litellm import completion
 
-POSITIONS = ["RB", "TE", "WR", "QB"]
-
 
 def make_team_table(picks: List) -> str:
     team_table = "## Starters\n"
-    pos = ["QB1", "QB2", "WR1", "WR2", "RB1", "RB2", "TE", "WR/TE", "RB/WR/TE"]
+    pos = ["QB1", "QB2", "WR1", "WR2", "RB1", "RB2", "TE", "WR/TE", "RB/WR/TE", "DEF"]
     bench: List[Dict] = []
 
     team_map = {p: None for p in pos}
@@ -68,6 +66,12 @@ def make_team_table(picks: List) -> str:
             else:
                 bench.append(p)
 
+        elif p["metadata"]["position"] == "DEF":
+            if not team_map["DEF"]:
+                team_map["DEF"] = p
+            else:
+                bench.append(p)
+
     for p in pos:
         player = team_map[p]
         if player is None:
@@ -85,7 +89,7 @@ def make_team_table(picks: List) -> str:
 
     team_table += "\n## Bench\n"
     for player in bench:
-        if player is {}:
+        if player == {}:
             name = "Empty"
             position = "None"
             team = "None"
@@ -103,8 +107,19 @@ def make_team_table(picks: List) -> str:
 
 def render_draft_state(player_id: str, draft_id: str) -> str:
     state = requests.get(f"https://api.sleeper.app/v1/draft/{draft_id}/picks").json()
-    my_picks = list(filter(lambda x: x["picked_by"] == player_id, state))
-    return make_team_table(my_picks)
+
+    player_ids = set(map(lambda x: x["picked_by"], state))
+    teams = {}
+
+    for player_id in list(player_ids):
+
+        picks = list(filter(lambda x: x["picked_by"] == player_id, state))
+        for p in picks:
+            print(p)
+            print(p["metadata"])
+        teams[player_id] = make_team_table(picks)
+
+    return teams
 
 
 if __name__ == "__main__":
@@ -112,13 +127,21 @@ if __name__ == "__main__":
     player_id = os.getenv("PLAYER_ID")
     state = render_draft_state(player_id, draft_id)
 
+    message = (
+        "Taken Players:\n"
+        + state[""]
+        + "\n\nCurrent Team:\n\n"
+        + state[player_id]
+        + "\n\nWho should I draft next in my Fantasy Football league? Give a final selection in [[]], so it can be easily parsed."
+    )
+
+    print(message)
     response = completion(
         model="openai/gpt-4o-search-preview",
         messages=[
             {
                 "role": "user",
-                "content": state
-                + "\n\nWho should I draft next in my Fantasy Football league? Give a final selection in [[]], so it can be easily parsed.",
+                "content": message,
             }
         ],
         web_search_options={
