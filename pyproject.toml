@@ -1,0 +1,9 @@
+[project]
+name = "draftbot2k25"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "litellm>=1.74.3",
+]
