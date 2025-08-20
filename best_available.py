@@ -14,6 +14,7 @@ class RankedPlayer:
     team: str
     rank: int
     avg_rank: float
+    position_rank: int
 
 
 class BestAvailable:
@@ -36,6 +37,7 @@ class BestAvailable:
                     team=item["team"],
                     rank=item["rank"],
                     avg_rank=item["avg_rank"],
+                    position_rank=item["position_rank"],
                 )
             )
 
@@ -104,7 +106,7 @@ def format_best_available_summary(draft_picks, player_slot: str) -> str:
     taken_ids = ba.get_taken_player_ids(draft_picks)
 
     # Get current player's picks
-    current_picks = [p for p in draft_picks if p.draft_slot == int(player_slot)]
+    current_picks = [p for p in draft_picks if p.picked_by == player_slot]
 
     # Analyze current roster
     current_roster = ba.analyze_current_roster(current_picks)
@@ -132,7 +134,7 @@ def format_best_available_summary(draft_picks, player_slot: str) -> str:
             summary += "|------|--------|------|\n"
 
             for player in players:
-                summary += f"| {player.rank} | {player.name} | {player.team} |\n"
+                summary += f"| {player.position}{player.position_rank} | {player.name} | {player.team} |\n"
 
             summary += "\n"
 

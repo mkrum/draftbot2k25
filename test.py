@@ -1,8 +1,9 @@
 import argparse
+import asyncio
 import re
 from typing import List, Optional
 
-from litellm import completion
+from litellm import acompletion
 from pydantic import BaseModel
 
 # Constants
@@ -107,16 +108,16 @@ Player: {name}, {position}, {team}
 """
 
 
-def get_player_analysis_with_retry(
-    prompt: str, max_retries: int = DEFAULT_MAX_RETRIES
+async def get_player_analysis_with_retry(
+    prompt: str, player_name: str, max_retries: int = DEFAULT_MAX_RETRIES
 ) -> Optional[PlayerAnalysis]:
     """Get player analysis with retry logic if parsing fails."""
 
     for attempt in range(max_retries):
-        print(f"\nAttempt {attempt + 1}/{max_retries}...")
+        print(f"[{player_name}] Attempt {attempt + 1}/{max_retries}...")
 
         try:
-            response = completion(
+            response = await acompletion(
                 model=MODEL_NAME,
                 messages=[
                     {
@@ -132,21 +133,49 @@ def get_player_analysis_with_retry(
             )
 
             content = response.choices[0].message.content
-            print(f"Raw response length: {len(content)} characters")
+            print(f"[{player_name}] Raw response length: {len(content)} characters")
 
             parsed = parse_player_analysis(content)
             if parsed:
-                print(f"Successfully parsed on attempt {attempt + 1}")
+                print(f"[{player_name}] Successfully parsed on attempt {attempt + 1}")
                 return parsed
             else:
-                print(f"Failed to parse attempt {attempt + 1}")
+                print(f"[{player_name}] Failed to parse attempt {attempt + 1}")
                 print("Raw response preview:")
                 print(content[:500] + "..." if len(content) > 500 else content)
 
         except Exception as e:
-            print(f"Error on attempt {attempt + 1}: {e}")
+            print(f"[{player_name}] Error on attempt {attempt + 1}: {e}")
 
     return None
+
+
+async def analyze_single_player(player: dict, i: int, num_players: int) -> dict:
+    """Analyze a single player asynchronously."""
+    print(f"\n{'='*60}")
+    print(
+        f"Analyzing {i}/{num_players}: {player['name']} ({player['position']}, {player['team']})"
+    )
+    print(f"ADP Rank: {player['rank']}")
+    print(f"{'='*60}")
+
+    # Create prompt for this player
+    player_prompt = create_player_prompt(
+        player["name"], player["position"], player["team"]
+    )
+
+    # Get analysis with retry
+    parsed = await get_player_analysis_with_retry(
+        player_prompt, player["name"], max_retries=5
+    )
+
+    if parsed:
+        result = create_success_result(player, parsed)
+        print(f"[{player['name']}] SUCCESS - Analysis saved")
+        return result
+    else:
+        print(f"[{player['name']}] FAILED - Could not analyze")
+        return create_error_result(player)
 
 
 def create_success_result(player: dict, parsed: PlayerAnalysis) -> dict:
@@ -194,13 +223,16 @@ def create_error_result(player: dict) -> dict:
     }
 
 
-def analyze_top_players(resume_from_file=None, num_players=DEFAULT_NUM_PLAYERS):
+async def analyze_top_players(
+    resume_from_file=None, num_players=DEFAULT_NUM_PLAYERS, concurrency=3
+):
     """
     Analyze top players from ADP rankings and save results.
 
     Args:
         resume_from_file: Path to existing JSON file to resume from
         num_players: Number of top players to analyze (default 10)
+        concurrency: Number of concurrent analysis tasks (default 3)
     """
     import json
     import os
@@ -235,37 +267,65 @@ def analyze_top_players(resume_from_file=None, num_players=DEFAULT_NUM_PLAYERS):
         output_file = f"player_analyses_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         print(f"Starting fresh analysis, will save to: {output_file}")
 
-    # Analyze each player
+    # Filter out already analyzed players
+    players_to_analyze = []
     for i, player in enumerate(top_players, 1):
         player_key = f"{player['name']}_{player['position']}_{player['team']}"
-
         if player_key in analyzed_players:
             print(f"\n[{i}/{num_players}] Skipping {player['name']} - already analyzed")
-            continue
-
-        print(f"\n{'='*60}")
-        print(
-            f"Analyzing {i}/{num_players}: {player['name']} ({player['position']}, {player['team']})"
-        )
-        print(f"ADP Rank: {player['rank']}")
-        print(f"{'='*60}")
-
-        # Create prompt for this player
-        player_prompt = create_player_prompt(
-            player["name"], player["position"], player["team"]
-        )
-
-        # Get analysis with retry
-        parsed = get_player_analysis_with_retry(player_prompt, max_retries=5)
-
-        if parsed:
-            result = create_success_result(player, parsed)
-            results.append(result)
-            print(f"SUCCESS - Analysis saved for {player['name']}")
         else:
-            print(f"FAILED - Could not analyze {player['name']}")
-            result = create_error_result(player)
-            results.append(result)
+            players_to_analyze.append((player, i))
+
+    if not players_to_analyze:
+        print("All players already analyzed!")
+    else:
+        print(
+            f"\nAnalyzing {len(players_to_analyze)} players with concurrency={concurrency}"
+        )
+
+        # Create semaphore to limit concurrency
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def analyze_with_semaphore(player_data):
+            async with semaphore:
+                return await analyze_single_player(
+                    player_data[0], player_data[1], num_players
+                )
+
+        # Run analyses concurrently with checkpointing
+        checkpoint_lock = asyncio.Lock()
+
+        async def save_checkpoint():
+            """Save current results to file with proper locking."""
+            async with checkpoint_lock:
+                with open(output_file, "w") as f:
+                    json.dump(results, f, indent=2)
+
+        # Process players in smaller batches for checkpointing
+        batch_size = min(concurrency * 2, len(players_to_analyze))
+        for i in range(0, len(players_to_analyze), batch_size):
+            batch = players_to_analyze[i : i + batch_size]
+            print(
+                f"\nProcessing batch {i//batch_size + 1}/{(len(players_to_analyze) + batch_size - 1)//batch_size}"
+            )
+
+            tasks = [analyze_with_semaphore(player_data) for player_data in batch]
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process batch results
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    print(f"Error in analysis: {result}")
+                else:
+                    results.append(result)
+
+            # Save checkpoint after each batch
+            await save_checkpoint()
+            completed = len([r for r in results if "error" not in r])
+            total_in_results = len(results)
+            print(
+                f"Checkpoint saved - {completed}/{total_in_results} successful analyses"
+            )
 
     # Save results to JSON
     with open(output_file, "w") as f:
@@ -292,9 +352,19 @@ if __name__ == "__main__":
         default=DEFAULT_NUM_PLAYERS,
         help=f"Number of top players to analyze (default: {DEFAULT_NUM_PLAYERS})",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=3,
+        help="Number of concurrent analysis tasks (default: 3)",
+    )
 
     args = parser.parse_args()
 
-    results = analyze_top_players(
-        resume_from_file=args.resume, num_players=args.num_players
+    results = asyncio.run(
+        analyze_top_players(
+            resume_from_file=args.resume,
+            num_players=args.num_players,
+            concurrency=args.concurrency,
+        )
     )
