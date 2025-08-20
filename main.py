@@ -1,20 +1,21 @@
 import os
 import sys
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-import requests
 from litellm import completion
 
+from sleeper_api import DraftPickData, SleeperAPI
 
-def make_team_table(picks: List) -> str:
+
+def make_team_table(picks: List[DraftPickData]) -> str:
     team_table = "## Starters\n"
     pos = ["QB1", "QB2", "WR1", "WR2", "RB1", "RB2", "TE", "WR/TE", "RB/WR/TE", "DEF"]
-    bench: List[Dict] = []
+    bench: List[DraftPickData] = []
 
-    team_map = {p: None for p in pos}
+    team_map: Dict[str, Optional[DraftPickData]] = {p: None for p in pos}
     for p in picks:
 
-        if p["metadata"]["position"] == "QB":
+        if p.metadata and p.metadata.position == "QB":
             if not team_map["QB1"]:
                 team_map["QB1"] = p
 
@@ -24,7 +25,7 @@ def make_team_table(picks: List) -> str:
             else:
                 bench.append(p)
 
-        elif p["metadata"]["position"] == "RB":
+        elif p.metadata and p.metadata.position == "RB":
             if not team_map["RB1"]:
                 team_map["RB1"] = p
 
@@ -37,7 +38,7 @@ def make_team_table(picks: List) -> str:
             else:
                 bench.append(p)
 
-        elif p["metadata"]["position"] == "WR":
+        elif p.metadata and p.metadata.position == "WR":
             if not team_map["WR1"]:
                 team_map["WR1"] = p
 
@@ -53,7 +54,7 @@ def make_team_table(picks: List) -> str:
             else:
                 bench.append(p)
 
-        elif p["metadata"]["position"] == "TE":
+        elif p.metadata and p.metadata.position == "TE":
             if not team_map["TE"]:
                 team_map["TE"] = p
 
@@ -66,7 +67,7 @@ def make_team_table(picks: List) -> str:
             else:
                 bench.append(p)
 
-        elif p["metadata"]["position"] == "DEF":
+        elif p.metadata and p.metadata.position == "DEF":
             if not team_map["DEF"]:
                 team_map["DEF"] = p
             else:
@@ -78,46 +79,47 @@ def make_team_table(picks: List) -> str:
             name = "None"
             team = "None"
         else:
-            name = (
-                player["metadata"]["first_name"] + " " + player["metadata"]["last_name"]
-            )
-            team = player["metadata"]["team"]
+            if player.metadata:
+                name = f"{player.metadata.first_name} {player.metadata.last_name}"
+                team = player.metadata.team or "None"
+            else:
+                name = "Unknown"
+                team = "None"
         team_table += f"| {p} | {name} | {team} | \n"
 
     while len(bench) < 5:
-        bench.append({})
+        bench.append(None)  # type: ignore
 
     team_table += "\n## Bench\n"
     for player in bench:
-        if player == {}:
+        if player is None:
             name = "Empty"
             position = "None"
             team = "None"
+        elif player.metadata:
+            name = f"{player.metadata.first_name} {player.metadata.last_name}"
+            position = player.metadata.position or "None"
+            team = player.metadata.team or "None"
         else:
-            name = (
-                player["metadata"]["first_name"] + " " + player["metadata"]["last_name"]
-            )
-            position = player["metadata"]["position"]
-            team = player["metadata"]["team"]
+            name = "Unknown"
+            position = "None"
+            team = "None"
 
         team_table += f"| {position} | {name} | {team} |\n"
 
     return team_table
 
 
-def render_draft_state(player_id: str, draft_id: str) -> str:
-    state = requests.get(f"https://api.sleeper.app/v1/draft/{draft_id}/picks").json()
+def render_draft_state(player_id: str, draft_id: str) -> Dict[str, str]:
+    api = SleeperAPI()
+    picks = api.get_draft_picks(draft_id)
 
-    player_ids = set(map(lambda x: x["picked_by"], state))
-    teams = {}
+    draft_slots: set[int] = set(p.draft_slot for p in picks)
+    teams: Dict[str, str] = {}
 
-    for player_id in list(player_ids):
-
-        picks = list(filter(lambda x: x["picked_by"] == player_id, state))
-        for p in picks:
-            print(p)
-            print(p["metadata"])
-        teams[player_id] = make_team_table(picks)
+    for slot in draft_slots:
+        slot_picks = [p for p in picks if p.draft_slot == slot]
+        teams[str(slot)] = make_team_table(slot_picks)
 
     return teams
 
@@ -127,11 +129,12 @@ if __name__ == "__main__":
     player_id = os.getenv("PLAYER_ID")
     state = render_draft_state(player_id, draft_id)
 
+    taken_players = "\n".join([v for k, v in state.items() if k != player_id])
     message = (
         "Taken Players:\n"
-        + state[""]
+        + taken_players
         + "\n\nCurrent Team:\n\n"
-        + state[player_id]
+        + state.get(player_id, "")
         + "\n\nWho should I draft next in my Fantasy Football league? Give a final selection in [[]], so it can be easily parsed."
     )
 
