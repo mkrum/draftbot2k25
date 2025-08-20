@@ -1,11 +1,11 @@
+import asyncio
 import glob
 import json
 import os
 import re
-import sys
 from typing import Dict, List, Optional
 
-from litellm import completion
+from litellm import acompletion
 
 from best_available import format_best_available_summary
 from sleeper_api import DraftPickData, SleeperAPI
@@ -84,6 +84,120 @@ def format_player_bio(analysis: dict) -> str:
         bio += f"**Bottom Line:** {clean_bottom_line}\n"
 
     return bio
+
+
+def parse_draft_selection(response_content: str) -> Optional[str]:
+    """Parse the AI response to extract the draft selection from [[]] brackets."""
+    # Look for text inside double brackets [[]]
+    match = re.search(r"\[\[(.*?)\]\]", response_content)
+    if match:
+        selection = match.group(1).strip()
+        return selection
+    return None
+
+
+async def get_draft_recommendation(message: str, inference_id: int = 1) -> dict:
+    """Get a single draft recommendation from the AI."""
+    try:
+        print(f"[Inference {inference_id}] Starting analysis...")
+
+        response = await acompletion(
+            model="openai/gpt-5",
+            messages=[
+                {
+                    "role": "user",
+                    "content": message,
+                }
+            ],
+            # web_search_options={
+            #    "search_context_size": "high"  # Options: "low", "medium", "high"
+            # },
+        )
+
+        response_content = response.choices[0].message.content
+        selection = parse_draft_selection(response_content)
+
+        print(
+            f"[Inference {inference_id}] Completed - Pick: {selection or 'FAILED TO PARSE'}"
+        )
+
+        return {
+            "inference_id": inference_id,
+            "full_response": response_content,
+            "parsed_selection": selection,
+            "success": selection is not None,
+        }
+
+    except Exception as e:
+        print(f"[Inference {inference_id}] Error: {e}")
+        return {
+            "inference_id": inference_id,
+            "full_response": f"Error: {e}",
+            "parsed_selection": None,
+            "success": False,
+            "error": str(e),
+        }
+
+
+async def run_multiple_inferences(message: str, num_inferences: int = 1) -> List[dict]:
+    """Run multiple AI inferences in parallel."""
+    print(f"\nRunning {num_inferences} inference{'s' if num_inferences > 1 else ''}...")
+
+    # Create tasks for all inferences
+    tasks = [get_draft_recommendation(message, i + 1) for i in range(num_inferences)]
+
+    # Run all inferences concurrently
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Handle any exceptions
+    processed_results = []
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            processed_results.append(
+                {
+                    "inference_id": i + 1,
+                    "full_response": f"Exception: {result}",
+                    "parsed_selection": None,
+                    "success": False,
+                    "error": str(result),
+                }
+            )
+        else:
+            processed_results.append(result)
+
+    return processed_results
+
+
+def analyze_inference_results(results: List[dict]) -> dict:
+    """Analyze results from multiple inferences."""
+    successful_results = [r for r in results if r["success"]]
+
+    if not successful_results:
+        return {
+            "consensus_pick": None,
+            "confidence": 0,
+            "picks_count": {},
+            "total_inferences": len(results),
+            "successful_inferences": 0,
+        }
+
+    # Count occurrences of each pick
+    picks_count = {}
+    for result in successful_results:
+        pick = result["parsed_selection"]
+        picks_count[pick] = picks_count.get(pick, 0) + 1
+
+    # Find the most common pick
+    consensus_pick = max(picks_count.items(), key=lambda x: x[1])
+    confidence = consensus_pick[1] / len(successful_results)
+
+    return {
+        "consensus_pick": consensus_pick[0],
+        "confidence": confidence,
+        "picks_count": picks_count,
+        "total_inferences": len(results),
+        "successful_inferences": len(successful_results),
+    }
 
 
 def format_best_available_with_bios(
@@ -252,9 +366,35 @@ def render_draft_state(player_id: str, draft_id: str) -> Dict[str, str]:
     return teams
 
 
-if __name__ == "__main__":
-    draft_id = sys.argv[1]
+async def main():
+    """Main async function to handle draft recommendations."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="AI Fantasy Football Draft Assistant")
+    parser.add_argument("draft_id", help="Sleeper draft ID")
+    parser.add_argument(
+        "--inferences",
+        type=int,
+        default=1,
+        help="Number of parallel inferences to run (default: 1)",
+    )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Show all inference responses, not just consensus",
+    )
+
+    args = parser.parse_args()
+
+    draft_id = args.draft_id
+    num_inferences = args.inferences
+    verbose = args.verbose
     player_id = os.getenv("PLAYER_ID")
+
+    if not player_id:
+        print("ERROR: PLAYER_ID environment variable not set")
+        return
 
     # Load player bios
     player_bios = load_player_bios()
@@ -282,17 +422,57 @@ if __name__ == "__main__":
     )
 
     print(message)
-    response = completion(
-        model="openai/gpt-5",
-        messages=[
-            {
-                "role": "user",
-                "content": message,
-            }
-        ],
-        # web_search_options={
-        #    "search_context_size": "high"  # Options: "low", "medium", "high"
-        # },
+    print("\n" + "=" * 80)
+
+    # Run multiple inferences
+    results = await run_multiple_inferences(message, num_inferences)
+
+    # Analyze results
+    analysis = analyze_inference_results(results)
+
+    print("\n" + "=" * 80)
+    print("DRAFT RECOMMENDATION RESULTS")
+    print("=" * 80)
+
+    if analysis["consensus_pick"]:
+        print(f"🎯 CONSENSUS PICK: {analysis['consensus_pick']}")
+        print(
+            f"📊 CONFIDENCE: {analysis['confidence']:.1%} ({analysis['picks_count'][analysis['consensus_pick']]}/{analysis['successful_inferences']} votes)"
+        )
+
+        if len(analysis["picks_count"]) > 1:
+            print("\n📈 ALL PICKS:")
+            sorted_picks = sorted(
+                analysis["picks_count"].items(), key=lambda x: x[1], reverse=True
+            )
+            for pick, count in sorted_picks:
+                percentage = count / analysis["successful_inferences"]
+                print(f"  • {pick}: {count} votes ({percentage:.1%})")
+    else:
+        print("❌ NO CONSENSUS: All inferences failed to produce valid picks")
+
+    print(
+        f"\n✅ Success Rate: {analysis['successful_inferences']}/{analysis['total_inferences']}"
     )
 
-    print(response)
+    # Show detailed responses if verbose or if there were multiple different picks
+    if verbose or (analysis["consensus_pick"] and len(analysis["picks_count"]) > 1):
+        print("\n" + "=" * 80)
+        print("DETAILED INFERENCE RESPONSES")
+        print("=" * 80)
+
+        for result in results:
+            print(f"\n--- Inference {result['inference_id']} ---")
+            if result["success"]:
+                print(f"Pick: {result['parsed_selection']}")
+                if verbose:
+                    print("Full Response:")
+                    print(result["full_response"])
+            else:
+                print(f"Failed: {result.get('error', 'Unknown error')}")
+
+    print("=" * 80)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
