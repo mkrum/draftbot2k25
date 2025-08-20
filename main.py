@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 
 from litellm import completion
 
+from best_available import format_best_available_summary
 from sleeper_api import DraftPickData, SleeperAPI
 
 
@@ -127,7 +128,14 @@ def render_draft_state(player_id: str, draft_id: str) -> Dict[str, str]:
 if __name__ == "__main__":
     draft_id = sys.argv[1]
     player_id = os.getenv("PLAYER_ID")
+
+    # Get draft state
+    api = SleeperAPI()
+    picks = api.get_draft_picks(draft_id)
     state = render_draft_state(player_id, draft_id)
+
+    # Get best available analysis
+    best_available_summary = format_best_available_summary(picks, player_id)
 
     taken_players = "\n".join([v for k, v in state.items() if k != player_id])
     message = (
@@ -135,6 +143,7 @@ if __name__ == "__main__":
         + taken_players
         + "\n\nCurrent Team:\n\n"
         + state.get(player_id, "")
+        + best_available_summary
         + "\n\nWho should I draft next in my Fantasy Football league? Give a final selection in [[]], so it can be easily parsed."
     )
 
