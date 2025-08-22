@@ -1,13 +1,13 @@
+"""Common functions for draft assistants."""
+
 import asyncio
 import glob
 import json
-import os
 import re
 from typing import Dict, List, Optional
 
 from litellm import acompletion
 
-from best_available import format_best_available_summary
 from sleeper_api import DraftPickData, SleeperAPI
 
 
@@ -109,9 +109,6 @@ async def get_draft_recommendation(message: str, inference_id: int = 1) -> dict:
                     "content": message,
                 }
             ],
-            # web_search_options={
-            #    "search_context_size": "high"  # Options: "low", "medium", "high"
-            # },
         )
 
         response_content = response.choices[0].message.content
@@ -163,7 +160,7 @@ async def run_multiple_inferences(message: str, num_inferences: int = 1) -> List
                 }
             )
         else:
-            processed_results.append(result)
+            processed_results.append(result)  # type: ignore[arg-type]
 
     return processed_results
 
@@ -182,7 +179,7 @@ def analyze_inference_results(results: List[dict]) -> dict:
         }
 
     # Count occurrences of each pick
-    picks_count = {}
+    picks_count: Dict[str, int] = {}
     for result in successful_results:
         pick = result["parsed_selection"]
         picks_count[pick] = picks_count.get(pick, 0) + 1
@@ -315,8 +312,8 @@ def make_team_table(picks: List[DraftPickData]) -> str:
             else:
                 bench.append(p)
 
-    for p in pos:
-        player = team_map[p]
+    for position in pos:
+        player = team_map[position]
         if player is None:
             name = "None"
             team = "None"
@@ -327,10 +324,10 @@ def make_team_table(picks: List[DraftPickData]) -> str:
             else:
                 name = "Unknown"
                 team = "None"
-        team_table += f"| {p} | {name} | {team} | \n"
+        team_table += f"| {position} | {name} | {team} | \n"
 
     while len(bench) < 5:
-        bench.append(None)  # type: ignore
+        bench.append(None)  # type: ignore[arg-type]
 
     team_table += "\n## Bench\n"
     for player in bench:
@@ -366,70 +363,8 @@ def render_draft_state(player_id: str, draft_id: str) -> Dict[str, str]:
     return teams
 
 
-async def main():
-    """Main async function to handle draft recommendations."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description="AI Fantasy Football Draft Assistant")
-    parser.add_argument("draft_id", help="Sleeper draft ID")
-    parser.add_argument(
-        "--inferences",
-        type=int,
-        default=1,
-        help="Number of parallel inferences to run (default: 1)",
-    )
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="Show all inference responses, not just consensus",
-    )
-
-    args = parser.parse_args()
-
-    draft_id = args.draft_id
-    num_inferences = args.inferences
-    verbose = args.verbose
-    player_id = os.getenv("PLAYER_ID")
-
-    if not player_id:
-        print("ERROR: PLAYER_ID environment variable not set")
-        return
-
-    # Load player bios
-    player_bios = load_player_bios()
-
-    # Get draft state
-    api = SleeperAPI()
-    picks = api.get_draft_picks(draft_id)
-    state = render_draft_state(player_id, draft_id)
-
-    # Get best available analysis with detailed bios
-    if player_bios:
-        best_available_summary = format_best_available_with_bios(
-            picks, player_id, player_bios
-        )
-    else:
-        # Fallback to basic summary if no bios available
-        best_available_summary = format_best_available_summary(picks, player_id)
-        print("Warning: No player bios found, using basic format")
-
-    message = (
-        "# Current Team:\n\n"
-        + state.get(player_id, "")
-        + best_available_summary
-        + "\n\nBased on the detailed player analyses above, who should I draft next in my Fantasy Football league? Consider each player's strengths, concerns, and fit with my current roster needs. Give a final selection in [[]], so it can be easily parsed."
-    )
-
-    print(message)
-    print("\n" + "=" * 80)
-
-    # Run multiple inferences
-    results = await run_multiple_inferences(message, num_inferences)
-
-    # Analyze results
-    analysis = analyze_inference_results(results)
-
+def display_results(analysis: dict, results: List[dict], verbose: bool):
+    """Display inference results."""
     print("\n" + "=" * 80)
     print("DRAFT RECOMMENDATION RESULTS")
     print("=" * 80)
@@ -472,7 +407,3 @@ async def main():
                 print(f"Failed: {result.get('error', 'Unknown error')}")
 
     print("=" * 80)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

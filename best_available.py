@@ -45,7 +45,7 @@ class BestAvailable:
 
     def _group_by_position(self) -> Dict[str, List[RankedPlayer]]:
         """Group players by position, sorted by rank."""
-        by_position = {}
+        by_position: Dict[str, List[RankedPlayer]] = {}
 
         for player in self.adp_rankings:
             pos = player.position

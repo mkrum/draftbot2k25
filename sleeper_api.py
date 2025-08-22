@@ -211,7 +211,7 @@ class PlayerMetadata(BaseModel):
 class DraftPickData(BaseModel):
     player_id: Optional[str] = None
     picked_by: Optional[str] = None
-    roster_id: Optional[str] = None
+    roster_id: Optional[Any] = None  # Can be string or int from API
     round: int
     draft_slot: int
     pick_no: int
