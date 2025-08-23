@@ -51,13 +51,13 @@ async def main():
     player_bios = load_player_bios()
 
     # Load chopped league strategy
-    with open("chopped_league_strategy.md", "r") as f:
+    with open("chopped_league_strategy_v2.md", "r") as f:
         chopped_strategy = f.read()
 
     # Get draft state
     api = SleeperAPI()
     picks = api.get_draft_picks(draft_id)
-    state = render_draft_state(player_id, draft_id)
+    state = render_draft_state(player_id, draft_id, "chopped")
 
     # Get best available analysis with detailed bios
     if player_bios:

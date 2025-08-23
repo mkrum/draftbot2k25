@@ -57,7 +57,7 @@ async def main():
     # Get draft state
     api = SleeperAPI()
     picks = api.get_draft_picks(draft_id)
-    state = render_draft_state(player_id, draft_id)
+    state = render_draft_state(player_id, draft_id, "standard")
 
     # Get best available analysis with detailed bios
     if player_bios:

@@ -6,7 +6,7 @@ import json
 import re
 from typing import Dict, List, Optional
 
-from litellm import acompletion
+from openai import AsyncOpenAI
 
 from sleeper_api import DraftPickData, SleeperAPI
 
@@ -101,17 +101,15 @@ async def get_draft_recommendation(message: str, inference_id: int = 1) -> dict:
     try:
         print(f"[Inference {inference_id}] Starting analysis...")
 
-        response = await acompletion(
-            model="openai/gpt-5",
-            messages=[
-                {
-                    "role": "user",
-                    "content": message,
-                }
-            ],
+        client = AsyncOpenAI()
+        response = await client.responses.create(
+            model="gpt-5",
+            reasoning={"effort": "high"},
+            tools=[{"type": "web_search_preview"}],
+            input=message,
         )
 
-        response_content = response.choices[0].message.content
+        response_content = response.output_text
         selection = parse_draft_selection(response_content)
 
         print(
@@ -213,7 +211,7 @@ def format_best_available_with_bios(
     current_roster = ba.analyze_current_roster(current_picks)
 
     # Get best available by position (limit to 3 for detailed bios)
-    best_by_position = ba.get_best_available_by_position(taken_ids, limit=3)
+    best_by_position = ba.get_best_available_by_position(taken_ids, limit=10)
 
     # Format the summary
     summary = "\n## CURRENT ROSTER\n"
@@ -224,7 +222,7 @@ def format_best_available_with_bios(
     summary += "\n\n## BEST AVAILABLE PLAYERS\n\n"
 
     # Create detailed sections for each position
-    priority_positions = ["QB", "RB", "WR", "TE", "K", "DST"]
+    priority_positions = ["QB", "RB", "WR", "TE"]
 
     for pos in priority_positions:
         if pos in best_by_position and best_by_position[pos]:
@@ -242,73 +240,137 @@ def format_best_available_with_bios(
                     summary += f"*ADP Rank: {player.rank} | Position Rank: {player.position}{player.position_rank}*\n\n"
 
                 summary += "---\n\n"
-
     return summary
 
 
-def make_team_table(picks: List[DraftPickData]) -> str:
+def make_team_table(picks: List[DraftPickData], league_type: str = "standard") -> str:
     team_table = "## Starters\n"
-    pos = ["QB1", "QB2", "WR1", "WR2", "RB1", "RB2", "TE", "WR/TE", "RB/WR/TE", "DEF"]
+
+    if league_type == "chopped":
+        # Chopped: 1QB, 2RB, 3WR, 1TE, 2FLEX, no K/DEF
+        pos = ["QB", "RB1", "RB2", "WR1", "WR2", "WR3", "TE", "FLEX1", "FLEX2"]
+    else:
+        # Standard: 1QB, 2RB, 2WR, 1TE, 1FLEX, 1REC_FLEX, 1SUPER_FLEX, 1K, 1DEF
+        pos = [
+            "QB",
+            "RB1",
+            "RB2",
+            "WR1",
+            "WR2",
+            "TE",
+            "FLEX",
+            "REC_FLEX",
+            "SUPER_FLEX",
+            "K",
+            "DEF",
+        ]
+
     bench: List[DraftPickData] = []
 
     team_map: Dict[str, Optional[DraftPickData]] = {p: None for p in pos}
     for p in picks:
+        if not p.metadata:
+            bench.append(p)
+            continue
 
-        if p.metadata and p.metadata.position == "QB":
-            if not team_map["QB1"]:
-                team_map["QB1"] = p
+        position = p.metadata.position
 
-            elif not team_map["QB2"]:
-                team_map["QB2"] = p
-
+        if league_type == "chopped":
+            # Chopped league logic: 1QB, 2RB, 3WR, 1TE, 2FLEX
+            if position == "QB":
+                if not team_map["QB"]:
+                    team_map["QB"] = p
+                else:
+                    bench.append(p)
+            elif position == "RB":
+                if not team_map["RB1"]:
+                    team_map["RB1"] = p
+                elif not team_map["RB2"]:
+                    team_map["RB2"] = p
+                elif not team_map["FLEX1"]:
+                    team_map["FLEX1"] = p
+                elif not team_map["FLEX2"]:
+                    team_map["FLEX2"] = p
+                else:
+                    bench.append(p)
+            elif position == "WR":
+                if not team_map["WR1"]:
+                    team_map["WR1"] = p
+                elif not team_map["WR2"]:
+                    team_map["WR2"] = p
+                elif not team_map["WR3"]:
+                    team_map["WR3"] = p
+                elif not team_map["FLEX1"]:
+                    team_map["FLEX1"] = p
+                elif not team_map["FLEX2"]:
+                    team_map["FLEX2"] = p
+                else:
+                    bench.append(p)
+            elif position == "TE":
+                if not team_map["TE"]:
+                    team_map["TE"] = p
+                elif not team_map["FLEX1"]:
+                    team_map["FLEX1"] = p
+                elif not team_map["FLEX2"]:
+                    team_map["FLEX2"] = p
+                else:
+                    bench.append(p)
             else:
                 bench.append(p)
-
-        elif p.metadata and p.metadata.position == "RB":
-            if not team_map["RB1"]:
-                team_map["RB1"] = p
-
-            elif not team_map["RB2"]:
-                team_map["RB2"] = p
-
-            elif not team_map["RB/WR/TE"]:
-                team_map["RB/WR/TE"] = p
-
-            else:
-                bench.append(p)
-
-        elif p.metadata and p.metadata.position == "WR":
-            if not team_map["WR1"]:
-                team_map["WR1"] = p
-
-            elif not team_map["WR2"]:
-                team_map["WR2"] = p
-
-            elif not team_map["WR/TE"]:
-                team_map["WR/TE"] = p
-
-            elif not team_map["RB/WR/TE"]:
-                team_map["RB/WR/TE"] = p
-
-            else:
-                bench.append(p)
-
-        elif p.metadata and p.metadata.position == "TE":
-            if not team_map["TE"]:
-                team_map["TE"] = p
-
-            elif not team_map["WR/TE"]:
-                team_map["WR/TE"] = p
-
-            elif not team_map["RB/WR/TE"]:
-                team_map["RB/WR/TE"] = p
-
-            else:
-                bench.append(p)
-
-        elif p.metadata and p.metadata.position == "DEF":
-            if not team_map["DEF"]:
-                team_map["DEF"] = p
+        else:
+            # Standard league logic: 1QB, 2RB, 2WR, 1TE, 1FLEX, 1REC_FLEX, 1SUPER_FLEX, 1K, 1DEF
+            if position == "QB":
+                if not team_map["QB"]:
+                    team_map["QB"] = p
+                elif not team_map["SUPER_FLEX"]:
+                    team_map["SUPER_FLEX"] = p
+                else:
+                    bench.append(p)
+            elif position == "RB":
+                if not team_map["RB1"]:
+                    team_map["RB1"] = p
+                elif not team_map["RB2"]:
+                    team_map["RB2"] = p
+                elif not team_map["FLEX"]:
+                    team_map["FLEX"] = p
+                elif not team_map["SUPER_FLEX"]:
+                    team_map["SUPER_FLEX"] = p
+                else:
+                    bench.append(p)
+            elif position == "WR":
+                if not team_map["WR1"]:
+                    team_map["WR1"] = p
+                elif not team_map["WR2"]:
+                    team_map["WR2"] = p
+                elif not team_map["REC_FLEX"]:
+                    team_map["REC_FLEX"] = p
+                elif not team_map["FLEX"]:
+                    team_map["FLEX"] = p
+                elif not team_map["SUPER_FLEX"]:
+                    team_map["SUPER_FLEX"] = p
+                else:
+                    bench.append(p)
+            elif position == "TE":
+                if not team_map["TE"]:
+                    team_map["TE"] = p
+                elif not team_map["REC_FLEX"]:
+                    team_map["REC_FLEX"] = p
+                elif not team_map["FLEX"]:
+                    team_map["FLEX"] = p
+                elif not team_map["SUPER_FLEX"]:
+                    team_map["SUPER_FLEX"] = p
+                else:
+                    bench.append(p)
+            elif position == "K":
+                if not team_map["K"]:
+                    team_map["K"] = p
+                else:
+                    bench.append(p)
+            elif position == "DEF":
+                if not team_map["DEF"]:
+                    team_map["DEF"] = p
+                else:
+                    bench.append(p)
             else:
                 bench.append(p)
 
@@ -349,7 +411,9 @@ def make_team_table(picks: List[DraftPickData]) -> str:
     return team_table
 
 
-def render_draft_state(player_id: str, draft_id: str) -> Dict[str, str]:
+def render_draft_state(
+    player_id: str, draft_id: str, league_type: str = "standard"
+) -> Dict[str, str]:
     api = SleeperAPI()
     picks = api.get_draft_picks(draft_id)
 
@@ -358,7 +422,7 @@ def render_draft_state(player_id: str, draft_id: str) -> Dict[str, str]:
 
     for pid in player_ids:
         player_picks = [p for p in picks if p.picked_by == pid]
-        teams[pid] = make_team_table(player_picks)
+        teams[pid] = make_team_table(player_picks, league_type)
 
     return teams
 

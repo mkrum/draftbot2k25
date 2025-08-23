@@ -28,31 +28,6 @@ In Chopped leagues, you can't win if you're eliminated. Every draft pick must be
 - Every roster spot needs to be a potential weekly starter
 - Handcuffs are luxury items you can't afford
 
-## POSITIONAL STRATEGY
-
-### Wide Receiver Priority (Target: 6-7 WRs)
-- With 3WR + 2FLEX spots, WRs are your foundation
-- Draft AT LEAST 3 WRs in first 5 rounds
-- Target possession receivers with high target shares
-- Avoid field stretchers and boom/bust deep threats
-
-### Running Back Approach (Target: 4-5 RBs)
-- Need 2-3 reliable RBs minimum
-- Focus on 3-down backs and pass-catching RBs
-- Avoid committee backfields and TD-dependent RBs
-- RBs on good offenses > talented RBs on bad teams
-
-### Quarterback Strategy (Target: 1-2 QBs)
-- In 1QB league, wait until rounds 6-10
-- Target consistent 18+ point QBs over upside plays
-- Running QBs provide safer floors
-- Avoid rookies and unproven starters
-
-### Tight End Approach (Target: 1-2 TEs)
-- Either get elite (top 3) or wait completely
-- Middle-tier TEs are elimination landmines
-- Target TEs with 5+ targets per game
-
 ## PLAYER ARCHETYPES TO TARGET
 
 ### MUST DRAFT
@@ -120,11 +95,6 @@ Before drafting any player, ask:
 - Don't overpay for depth in draft - it's coming via waivers
 - Focus draft capital on locked-in starters
 - Bench should be upside plays, not mediocre veterans
-
-### Elimination Prediction
-- Mentally note likely weak teams
-- Their best players will be available soon
-- Don't draft same position as their studs
 
 ## SPECIFIC DRAFT RECOMMENDATIONS
 
