@@ -4,17 +4,88 @@
 import argparse
 import asyncio
 import os
+from typing import List
 
 from best_available import format_best_available_summary
 from draft_common import (
     analyze_inference_results,
     display_results,
     format_best_available_with_bios,
+    get_draft_recommendation,
     load_player_bios,
     render_draft_state,
-    run_multiple_inferences,
 )
 from sleeper_api import SleeperAPI
+
+
+async def run_multiple_strategies(base_message: str, num_inferences: int) -> List[dict]:
+    """Run multiple inferences using different strategy files."""
+    print(
+        f"\nRunning {num_inferences} inference{'s' if num_inferences > 1 else ''} with different strategies..."
+    )
+
+    # Create tasks for all inferences, cycling through strategy files
+    tasks = []
+    for i in range(num_inferences):
+        # Cycle through strategies 1-10
+        strategy_num = i + 11
+        strategy_file = f"chopped_strategy_{strategy_num}.md"
+
+        # Try to load the strategy file
+        try:
+            with open(strategy_file, "r") as f:
+                strategy_content = f.read()
+            print(f"[Inference {i+1}] Using strategy: {strategy_file}")
+        except FileNotFoundError:
+            print(
+                f"[Inference {i+1}] Warning: {strategy_file} not found, using default"
+            )
+            # Fall back to default strategy
+            try:
+                with open("chopped_league_strategy_v3.md", "r") as f:
+                    strategy_content = f.read()
+                strategy_file = "chopped_league_strategy_v3.md"
+            except FileNotFoundError:
+                print(f"[Inference {i+1}] Error: No strategy files found")
+                continue
+
+        # Build the full message with this strategy
+        full_message = (
+            "# CHOPPED LEAGUE DRAFT - ELIMINATION FORMAT\n\n"
+            "## CRITICAL: This is a SURVIVAL league where the LOWEST scoring team each week is ELIMINATED.\n\n"
+            + strategy_content
+            + "\n\n"
+            + base_message
+        )
+
+        # Create the task
+        task = get_draft_recommendation(full_message, i + 1, strategy_file)
+        tasks.append(task)
+
+    if not tasks:
+        return []
+
+    # Run all inferences concurrently
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Handle any exceptions
+    processed_results = []
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            processed_results.append(
+                {
+                    "inference_id": i + 1,
+                    "full_response": f"Exception: {result}",
+                    "parsed_selection": None,
+                    "success": False,
+                    "error": str(result),
+                    "strategy_used": f"chopped_strategy_{(i % 10) + 1}.md",
+                }
+            )
+        else:
+            processed_results.append(result)  # type: ignore[arg-type]
+
+    return processed_results
 
 
 async def main():
@@ -35,6 +106,12 @@ async def main():
         action="store_true",
         help="Show all inference responses, not just consensus",
     )
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="chopped_league_strategy_v3.md",
+        help="Path to strategy markdown file (default: chopped_league_strategy_v3.md)",
+    )
 
     args = parser.parse_args()
 
@@ -49,10 +126,6 @@ async def main():
 
     # Load player bios
     player_bios = load_player_bios()
-
-    # Load chopped league strategy
-    with open("chopped_league_strategy_v2.md", "r") as f:
-        chopped_strategy = f.read()
 
     # Get draft state
     api = SleeperAPI()
@@ -69,12 +142,9 @@ async def main():
         best_available_summary = format_best_available_summary(picks, player_id)
         print("Warning: No player bios found, using basic format")
 
-    message = (
-        "# CHOPPED LEAGUE DRAFT - ELIMINATION FORMAT\n\n"
-        "## CRITICAL: This is a SURVIVAL league where the LOWEST scoring team each week is ELIMINATED.\n\n"
-        + chopped_strategy
-        + "\n\n"
-        + "# Current Team:\n\n"
+    # Create base message template
+    base_message = (
+        "# Current Team:\n\n"
         + state.get(player_id, "")
         + best_available_summary
         + "\n\n## DRAFT DECISION REQUIRED\n\n"
@@ -89,11 +159,8 @@ async def main():
         + "Give your final selection in [[Player Name]] format."
     )
 
-    print(message)
-    print("\n" + "=" * 80)
-
-    # Run multiple inferences
-    results = await run_multiple_inferences(message, num_inferences)
+    # Run multiple inferences with different strategies
+    results = await run_multiple_strategies(base_message, num_inferences)
 
     # Analyze results
     analysis = analyze_inference_results(results)

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Generate an improved Chopped League strategy using GPT-5 with high reasoning."""
 
+import sys
+
 from openai import OpenAI
 
 
-def generate_chopped_strategy():
+def generate_chopped_strategy(output_file=None):
     """Generate a new chopped league strategy using GPT-5."""
 
     prompt = """You are an expert fantasy football strategist tasked with creating the ultimate draft strategy for a "Chopped" elimination league format.
@@ -29,7 +31,7 @@ Create a comprehensive, strategic guide that addresses:
 
 1. **Core Philosophy**: What fundamental principles should guide every draft decision?
 2. **Round-by-Round Strategy**: Specific approach for rounds 1-15
-3. **Positional Priorities**: How to balance 3WR + 2FLEX requirements
+3. **Positional Priorities**: How to balance drafting requirements
 4. **Player Archetypes**: Specific types to target/avoid with examples
 5. **Risk Management**: How to minimize elimination risk
 6. **Waiver Strategy**: How the weekly additions affect draft approach
@@ -39,12 +41,6 @@ Create a comprehensive, strategic guide that addresses:
 10. **Week 1-4 Survival Plan**: Concrete steps for early season safety
 
 Think deeply about the mathematical probability of elimination, the psychology of risk-averse vs aggressive drafting, and the unique dynamics of expanding player pools.
-
-Consider edge cases like:
-- What if multiple good teams are eliminated early?
-- How does draft position affect strategy?
-- Should you target players from likely weak teams?
-- How much should early-season schedule matter?
 
 Create a strategy that maximizes survival probability while maintaining upside for later in the season.
 
@@ -65,7 +61,9 @@ Format as a comprehensive markdown guide that can be used during live drafts."""
     strategy_content = response.output_text
 
     # Save the new strategy
-    output_file = "chopped_league_strategy_v2.md"
+    if not output_file:
+        output_file = "chopped_league_strategy_v3.md"
+
     with open(output_file, "w") as f:
         f.write(strategy_content)
 
@@ -84,4 +82,5 @@ Format as a comprehensive markdown guide that can be used during live drafts."""
 
 
 if __name__ == "__main__":
-    generate_chopped_strategy()
+    output_file = sys.argv[1] if len(sys.argv) > 1 else None
+    generate_chopped_strategy(output_file)

@@ -96,10 +96,17 @@ def parse_draft_selection(response_content: str) -> Optional[str]:
     return None
 
 
-async def get_draft_recommendation(message: str, inference_id: int = 1) -> dict:
+async def get_draft_recommendation(
+    message: str, inference_id: int = 1, strategy_name: Optional[str] = None
+) -> dict:
     """Get a single draft recommendation from the AI."""
     try:
-        print(f"[Inference {inference_id}] Starting analysis...")
+        if strategy_name:
+            print(
+                f"[Inference {inference_id}] Starting analysis with {strategy_name}..."
+            )
+        else:
+            print(f"[Inference {inference_id}] Starting analysis...")
 
         client = AsyncOpenAI()
         response = await client.responses.create(
@@ -121,6 +128,7 @@ async def get_draft_recommendation(message: str, inference_id: int = 1) -> dict:
             "full_response": response_content,
             "parsed_selection": selection,
             "success": selection is not None,
+            "strategy_used": strategy_name,
         }
 
     except Exception as e:
@@ -131,6 +139,7 @@ async def get_draft_recommendation(message: str, inference_id: int = 1) -> dict:
             "parsed_selection": None,
             "success": False,
             "error": str(e),
+            "strategy_used": strategy_name,
         }
 
 
@@ -244,6 +253,16 @@ def format_best_available_with_bios(
 
 
 def make_team_table(picks: List[DraftPickData], league_type: str = "standard") -> str:
+    # Load bye week data from ADP rankings
+    bye_weeks = {}
+    try:
+        with open("adp_rankings.json", "r") as f:
+            adp_data = json.load(f)
+            for player in adp_data:
+                bye_weeks[player["sleeper_id"]] = player.get("bye_week", 0)
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        pass
+
     team_table = "## Starters\n"
 
     if league_type == "chopped":
@@ -379,14 +398,17 @@ def make_team_table(picks: List[DraftPickData], league_type: str = "standard") -
         if player is None:
             name = "None"
             team = "None"
+            bye = "-"
         else:
             if player.metadata:
                 name = f"{player.metadata.first_name} {player.metadata.last_name}"
                 team = player.metadata.team or "None"
+                bye = str(bye_weeks.get(player.player_id, "-"))
             else:
                 name = "Unknown"
                 team = "None"
-        team_table += f"| {position} | {name} | {team} | \n"
+                bye = "-"
+        team_table += f"| {position} | {name} | {team} | Bye: {bye} |\n"
 
     while len(bench) < 5:
         bench.append(None)  # type: ignore[arg-type]
@@ -397,16 +419,19 @@ def make_team_table(picks: List[DraftPickData], league_type: str = "standard") -
             name = "Empty"
             position = "None"
             team = "None"
+            bye = "-"
         elif player.metadata:
             name = f"{player.metadata.first_name} {player.metadata.last_name}"
             position = player.metadata.position or "None"
             team = player.metadata.team or "None"
+            bye = str(bye_weeks.get(player.player_id, "-")) if player else "-"
         else:
             name = "Unknown"
             position = "None"
             team = "None"
+            bye = "-"
 
-        team_table += f"| {position} | {name} | {team} |\n"
+        team_table += f"| {position} | {name} | {team} | Bye: {bye} |\n"
 
     return team_table
 
@@ -462,6 +487,8 @@ def display_results(analysis: dict, results: List[dict], verbose: bool):
 
         for result in results:
             print(f"\n--- Inference {result['inference_id']} ---")
+            if "strategy_used" in result and result["strategy_used"]:
+                print(f"Strategy: {result['strategy_used']}")
             if result["success"]:
                 print(f"Pick: {result['parsed_selection']}")
                 if verbose:

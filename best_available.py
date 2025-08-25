@@ -15,6 +15,7 @@ class RankedPlayer:
     rank: int
     avg_rank: float
     position_rank: int
+    bye_week: int = 0
 
 
 class BestAvailable:
@@ -38,6 +39,7 @@ class BestAvailable:
                     rank=item["rank"],
                     avg_rank=item["avg_rank"],
                     position_rank=item["position_rank"],
+                    bye_week=item.get("bye_week", 0),
                 )
             )
 

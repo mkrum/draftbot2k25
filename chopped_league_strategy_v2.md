@@ -32,7 +32,6 @@ League-wide weekly starters minimum:
 Implications
 - WR scarcity is real in practice: ~55–57 WRs start weekly. You need five startable WRs (3 starters + 2 FLEX depth) by mid-draft.
 - RB fragility is high; you need at least one anchor and usable RB2/3 depth to avoid zeros.
-- QB: one top-8 type notably cuts bottom-tail risk; punting QB increases weekly volatility.
 - TE: Either secure a set-and-forget option or carry two steady streamers early.
 
 ---
