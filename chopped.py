@@ -144,18 +144,34 @@ async def main():
 
     # Create base message template
     base_message = (
-        "# Current Team:\n\n"
+        "# 🚨 LIVE DRAFT - MY PICK IS NOW! 🚨\n\n"
+        + "I am currently on the clock in a LIVE DRAFT. I need to make my selection IMMEDIATELY.\n"
+        + "All players shown as available ARE currently available - no one else can pick before me.\n"
+        + "This is MY TURN to pick RIGHT NOW.\n\n"
+        + "# Current Team:\n\n"
         + state.get(player_id, "")
         + best_available_summary
-        + "\n\n## DRAFT DECISION REQUIRED\n\n"
-        + "Based on the CHOPPED LEAGUE ELIMINATION strategy above and the detailed player analyses, who should I draft next?\n\n"
+        + "\n\n## IMMEDIATE DRAFT DECISION REQUIRED\n\n"
+        + "**IMPORTANT: Please use web search to find the most current 2025 NFL information including:**\n"
+        + "- Recent injuries, suspensions, or player status updates\n"
+        + "- Current depth charts and projected starting roles\n"
+        + "- Recent training camp and preseason reports\n"
+        + "- Week 1-4 matchup analysis and defensive rankings\n"
+        + "- Any breaking news that affects player value\n\n"
+        + "Based on the CHOPPED LEAGUE ELIMINATION strategy above, the detailed player analyses, "
+        + "and CURRENT WEB INFORMATION, who should I draft with THIS PICK?\n\n"
         + "**SURVIVAL CRITICAL FACTORS:**\n"
         + "1. Will this player help AVOID ELIMINATION in Weeks 1-4?\n"
         + "2. Do they have a SAFE WEEKLY FLOOR (10+ points minimum)?\n"
         + "3. Are they a PROVEN, CONSISTENT performer?\n"
-        + "4. Do they fit the ANTI-ELIMINATION strategy?\n\n"
-        + "**REMEMBER:** In Chopped leagues, one bad week = ELIMINATION. Prioritize SURVIVAL over upside!\n\n"
-        + "Consider the player's FLOOR, consistency, and early-season schedule. "
+        + "4. Do they fit the ANTI-ELIMINATION strategy?\n"
+        + "5. Are there any RECENT DEVELOPMENTS (injuries, depth chart changes) affecting the best available players?\n\n"
+        + "**REMEMBER:** \n"
+        + "- This is a LIVE DRAFT - I need your pick NOW\n"
+        + "- All listed players ARE available for me to pick\n"
+        + "- In Chopped leagues, one bad week = ELIMINATION. Prioritize SURVIVAL over upside!\n\n"
+        + "Use web search to quickly verify current player situations, then give me the BEST PICK "
+        + "from the AVAILABLE PLAYERS shown above. "
         + "Give your final selection in [[Player Name]] format."
     )
 

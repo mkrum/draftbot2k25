@@ -3,13 +3,12 @@ import asyncio
 import re
 from typing import List, Optional
 
-from litellm import acompletion
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 # Constants
 DEFAULT_NUM_PLAYERS = 10
 DEFAULT_MAX_RETRIES = 3
-MODEL_NAME = "openai/gpt-4o-search-preview"
 
 
 class PlayerAnalysis(BaseModel):
@@ -113,26 +112,25 @@ async def get_player_analysis_with_retry(
 ) -> Optional[PlayerAnalysis]:
     """Get player analysis with retry logic if parsing fails."""
 
+    client = AsyncOpenAI()
+
     for attempt in range(max_retries):
         print(f"[{player_name}] Attempt {attempt + 1}/{max_retries}...")
 
         try:
-            response = await acompletion(
-                model=MODEL_NAME,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": (
-                            prompt
-                            if attempt == 0
-                            else f"{prompt}\n\nIMPORTANT: Please follow the exact format specified above with proper markdown headers (# and ##) and bullet points (-)."
-                        ),
-                    }
-                ],
-                web_search_options={"search_context_size": "high"},
+            enhanced_prompt = (
+                prompt
+                if attempt == 0
+                else f"{prompt}\n\nIMPORTANT: Please follow the exact format specified above with proper markdown headers (# and ##) and bullet points (-)."
             )
 
-            content = response.choices[0].message.content
+            response = await client.responses.create(
+                model="gpt-5",
+                tools=[{"type": "web_search_preview"}],
+                input=enhanced_prompt,
+            )
+
+            content = response.output_text
             print(f"[{player_name}] Raw response length: {len(content)} characters")
 
             parsed = parse_player_analysis(content)

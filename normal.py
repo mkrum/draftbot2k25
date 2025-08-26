@@ -70,20 +70,37 @@ async def main():
         print("Warning: No player bios found, using basic format")
 
     message = (
-        "# STANDARD FANTASY FOOTBALL DRAFT\n\n"
+        "# 🚨 LIVE DRAFT - MY PICK IS NOW! 🚨\n\n"
+        + "I am currently on the clock in a LIVE DRAFT. I need to make my selection IMMEDIATELY.\n"
+        + "All players shown as available ARE currently available - no one else can pick before me.\n"
+        + "This is MY TURN to pick RIGHT NOW.\n\n"
+        + "# STANDARD FANTASY FOOTBALL DRAFT\n\n"
         + standard_strategy
         + "\n\n"
         + "# Current Team:\n\n"
         + state.get(player_id, "")
         + best_available_summary
-        + "\n\n## DRAFT DECISION REQUIRED\n\n"
-        + "Based on the Standard League strategy above and the detailed player analyses, who should I draft next?\n\n"
+        + "\n\n## IMMEDIATE DRAFT DECISION REQUIRED\n\n"
+        + "**IMPORTANT: Please use web search to find the most current 2025 NFL information including:**\n"
+        + "- Recent injuries, health updates, or player status changes\n"
+        + "- Current team depth charts and projected roles\n"
+        + "- Training camp reports and preseason performance\n"
+        + "- Offensive line changes or coaching system updates\n"
+        + "- Any breaking news affecting player fantasy value\n\n"
+        + "Based on the Standard League strategy above, the detailed player analyses, "
+        + "and CURRENT WEB INFORMATION, who should I draft with THIS PICK?\n\n"
         + "**Key Considerations:**\n"
         + "1. Best player available vs positional need\n"
         + "2. Balance of floor and ceiling for roster construction\n"
         + "3. Full season value including playoff weeks\n"
-        + "4. Positional scarcity in 13-team league\n\n"
-        + "Consider each player's strengths, concerns, and fit with my current roster needs. "
+        + "4. Positional scarcity in 13-team league\n"
+        + "5. Recent developments that affect player rankings\n\n"
+        + "**REMEMBER:**\n"
+        + "- This is a LIVE DRAFT - I need your pick NOW\n"
+        + "- All listed players ARE available for me to pick\n"
+        + "- No one can 'snipe' these players - it's MY turn\n\n"
+        + "Use web search to quickly verify current player situations, then give me the BEST PICK "
+        + "from the AVAILABLE PLAYERS shown above. "
         + "Give your final selection in [[Player Name]] format."
     )
 

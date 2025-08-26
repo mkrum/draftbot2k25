@@ -3,6 +3,7 @@
 import asyncio
 import glob
 import json
+import os
 import re
 from typing import Dict, List, Optional
 
@@ -12,14 +13,26 @@ from sleeper_api import DraftPickData, SleeperAPI
 
 
 def load_player_bios() -> Dict[str, dict]:
-    """Load player analysis data from the most recent analysis file."""
-    # Find the most recent player analysis file
-    analysis_files = glob.glob("player_analyses_*.json")
-    if not analysis_files:
-        return {}
+    """Load player analysis data from the combined analysis file."""
+    # Use the combined file with GPT-5 bios for top 200 players
+    # and GPT-4o bios for ranks 201-300
+    preferred_file = "player_analyses_combined.json"
 
-    # Get the most recent file by sorting by name (timestamp in filename)
-    latest_file = sorted(analysis_files)[-1]
+    # Check if combined file exists, otherwise fall back
+    if os.path.exists(preferred_file):
+        latest_file = preferred_file
+    else:
+        # Fall back to the comprehensive GPT-4o file
+        fallback_file = "player_analyses_20250820_154415.json"
+        if os.path.exists(fallback_file):
+            latest_file = fallback_file
+        else:
+            # Last resort: find the most recent player analysis file
+            analysis_files = glob.glob("player_analyses_*.json")
+            if not analysis_files:
+                return {}
+            # Get the most recent file by sorting by name (timestamp in filename)
+            latest_file = sorted(analysis_files)[-1]
 
     try:
         with open(latest_file, "r") as f:
@@ -119,8 +132,22 @@ async def get_draft_recommendation(
         response_content = response.output_text
         selection = parse_draft_selection(response_content)
 
+        # Check if web search was used (look for citation patterns)
+        web_search_patterns = [
+            r"\[.*?\]\(https?://.*?\)",  # Markdown links
+            r"https?://\S+",  # Direct URLs
+            r"According to .*? \(",  # Citation references
+            r"\[\d+\]",  # Numbered references
+            r"Source:",  # Explicit source mentions
+        ]
+
+        used_web_search = any(
+            re.search(pattern, response_content) for pattern in web_search_patterns
+        )
+
         print(
             f"[Inference {inference_id}] Completed - Pick: {selection or 'FAILED TO PARSE'}"
+            f" | Web Search: {'Yes' if used_web_search else 'No'}"
         )
 
         return {
@@ -129,6 +156,7 @@ async def get_draft_recommendation(
             "parsed_selection": selection,
             "success": selection is not None,
             "strategy_used": strategy_name,
+            "used_web_search": used_web_search,
         }
 
     except Exception as e:
@@ -489,6 +517,10 @@ def display_results(analysis: dict, results: List[dict], verbose: bool):
             print(f"\n--- Inference {result['inference_id']} ---")
             if "strategy_used" in result and result["strategy_used"]:
                 print(f"Strategy: {result['strategy_used']}")
+            if "used_web_search" in result:
+                print(
+                    f"Web Search Used: {'Yes' if result['used_web_search'] else 'No'}"
+                )
             if result["success"]:
                 print(f"Pick: {result['parsed_selection']}")
                 if verbose:
