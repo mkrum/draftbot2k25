@@ -10,11 +10,80 @@ from draft_common import (
     analyze_inference_results,
     display_results,
     format_best_available_with_bios,
+    get_draft_recommendation,
     load_player_bios,
     render_draft_state,
-    run_multiple_inferences,
 )
 from sleeper_api import SleeperAPI
+
+
+async def run_multiple_inferences_shuffled(
+    message_template: str,
+    num_inferences: int,
+    picks,
+    player_id: str,
+    player_bios,
+    standard_strategy: str,
+) -> list:
+    """Run multiple inferences with shuffled player orders."""
+    print(f"\nRunning {num_inferences} inference{'s' if num_inferences > 1 else ''}...")
+
+    tasks = []
+    for i in range(num_inferences):
+        # Generate shuffled best available summary with unique seed per inference
+        shuffle_seed = i + 2000  # Different seed range from chopped
+        if player_bios:
+            best_available_summary = format_best_available_with_bios(
+                picks, player_id, player_bios, shuffle_seed=shuffle_seed
+            )
+        else:
+            best_available_summary = format_best_available_summary(
+                picks, player_id, shuffle_seed=shuffle_seed
+            )
+
+        # Build full message with shuffled players
+        message = (
+            "# STANDARD FANTASY FOOTBALL DRAFT\n\n"
+            + standard_strategy
+            + "\n\n"
+            + message_template.replace("{BEST_AVAILABLE}", best_available_summary)
+        )
+
+        # Log the first inference's full message
+        if i == 0:
+            print("\n" + "=" * 80)
+            print("INFERENCE 1 MESSAGE:")
+            print("=" * 80)
+            print(message)
+            print("=" * 80 + "\n")
+
+        # Create task
+        task = get_draft_recommendation(message, i + 1)
+        tasks.append(task)
+
+    if not tasks:
+        return []
+
+    # Run all inferences concurrently
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Handle any exceptions
+    processed_results = []
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            processed_results.append(
+                {
+                    "inference_id": i + 1,
+                    "full_response": f"Exception: {result}",
+                    "parsed_selection": None,
+                    "success": False,
+                    "error": str(result),
+                }
+            )
+        else:
+            processed_results.append(result)  # type: ignore[arg-type]
+
+    return processed_results
 
 
 async def main():
@@ -59,27 +128,15 @@ async def main():
     picks = api.get_draft_picks(draft_id)
     state = render_draft_state(player_id, draft_id, "standard")
 
-    # Get best available analysis with detailed bios
-    if player_bios:
-        best_available_summary = format_best_available_with_bios(
-            picks, player_id, player_bios
-        )
-    else:
-        # Fallback to basic summary if no bios available
-        best_available_summary = format_best_available_summary(picks, player_id)
-        print("Warning: No player bios found, using basic format")
-
-    message = (
+    # Create message template with placeholder for shuffled best available
+    message_template = (
         "# 🚨 LIVE DRAFT - MY PICK IS NOW! 🚨\n\n"
         + "I am currently on the clock in a LIVE DRAFT. I need to make my selection IMMEDIATELY.\n"
         + "All players shown as available ARE currently available - no one else can pick before me.\n"
         + "This is MY TURN to pick RIGHT NOW.\n\n"
-        + "# STANDARD FANTASY FOOTBALL DRAFT\n\n"
-        + standard_strategy
-        + "\n\n"
         + "# Current Team:\n\n"
         + state.get(player_id, "")
-        + best_available_summary
+        + "{BEST_AVAILABLE}"  # Placeholder for shuffled best available
         + "\n\n## IMMEDIATE DRAFT DECISION REQUIRED\n\n"
         + "**IMPORTANT: Please use web search to find the most current 2025 NFL information including:**\n"
         + "- Recent injuries, health updates, or player status changes\n"
@@ -104,11 +161,17 @@ async def main():
         + "Give your final selection in [[Player Name]] format."
     )
 
-    print(message)
     print("\n" + "=" * 80)
 
-    # Run multiple inferences
-    results = await run_multiple_inferences(message, num_inferences)
+    # Run multiple inferences with shuffled player orders
+    results = await run_multiple_inferences_shuffled(
+        message_template,
+        num_inferences,
+        picks,
+        player_id,
+        player_bios,
+        standard_strategy,
+    )
 
     # Analyze results
     analysis = analyze_inference_results(results)

@@ -4,6 +4,7 @@ import asyncio
 import glob
 import json
 import os
+import random
 import re
 from typing import Dict, List, Optional
 
@@ -233,7 +234,10 @@ def analyze_inference_results(results: List[dict]) -> dict:
 
 
 def format_best_available_with_bios(
-    draft_picks, player_slot: str, player_bios: Dict[str, dict]
+    draft_picks,
+    player_slot: str,
+    player_bios: Dict[str, dict],
+    shuffle_seed: Optional[int] = None,
 ) -> str:
     """Create a summary of best available players with detailed bios."""
     from best_available import BestAvailable
@@ -261,9 +265,19 @@ def format_best_available_with_bios(
     # Create detailed sections for each position
     priority_positions = ["QB", "RB", "WR", "TE"]
 
+    # Shuffle positions if seed provided
+    if shuffle_seed is not None:
+        rng = random.Random(shuffle_seed)
+        priority_positions = priority_positions.copy()
+        rng.shuffle(priority_positions)
+
     for pos in priority_positions:
         if pos in best_by_position and best_by_position[pos]:
-            players = best_by_position[pos]
+            players = best_by_position[pos].copy()
+
+            # Shuffle players within position if seed provided
+            if shuffle_seed is not None:
+                rng.shuffle(players)
 
             summary += f"### {pos}\n\n"
 
@@ -486,27 +500,6 @@ def display_results(analysis: dict, results: List[dict], verbose: bool):
     print("DRAFT RECOMMENDATION RESULTS")
     print("=" * 80)
 
-    if analysis["consensus_pick"]:
-        print(f"🎯 CONSENSUS PICK: {analysis['consensus_pick']}")
-        print(
-            f"📊 CONFIDENCE: {analysis['confidence']:.1%} ({analysis['picks_count'][analysis['consensus_pick']]}/{analysis['successful_inferences']} votes)"
-        )
-
-        if len(analysis["picks_count"]) > 1:
-            print("\n📈 ALL PICKS:")
-            sorted_picks = sorted(
-                analysis["picks_count"].items(), key=lambda x: x[1], reverse=True
-            )
-            for pick, count in sorted_picks:
-                percentage = count / analysis["successful_inferences"]
-                print(f"  • {pick}: {count} votes ({percentage:.1%})")
-    else:
-        print("❌ NO CONSENSUS: All inferences failed to produce valid picks")
-
-    print(
-        f"\n✅ Success Rate: {analysis['successful_inferences']}/{analysis['total_inferences']}"
-    )
-
     # Show detailed responses if verbose or if there were multiple different picks
     if verbose or (analysis["consensus_pick"] and len(analysis["picks_count"]) > 1):
         print("\n" + "=" * 80)
@@ -530,3 +523,24 @@ def display_results(analysis: dict, results: List[dict], verbose: bool):
                 print(f"Failed: {result.get('error', 'Unknown error')}")
 
     print("=" * 80)
+
+    if analysis["consensus_pick"]:
+        print(f"🎯 CONSENSUS PICK: {analysis['consensus_pick']}")
+        print(
+            f"📊 CONFIDENCE: {analysis['confidence']:.1%} ({analysis['picks_count'][analysis['consensus_pick']]}/{analysis['successful_inferences']} votes)"
+        )
+
+        if len(analysis["picks_count"]) > 1:
+            print("\n📈 ALL PICKS:")
+            sorted_picks = sorted(
+                analysis["picks_count"].items(), key=lambda x: x[1], reverse=True
+            )
+            for pick, count in sorted_picks:
+                percentage = count / analysis["successful_inferences"]
+                print(f"  • {pick}: {count} votes ({percentage:.1%})")
+    else:
+        print("❌ NO CONSENSUS: All inferences failed to produce valid picks")
+
+    print(
+        f"\n✅ Success Rate: {analysis['successful_inferences']}/{analysis['total_inferences']}"
+    )

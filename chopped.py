@@ -18,8 +18,10 @@ from draft_common import (
 from sleeper_api import SleeperAPI
 
 
-async def run_multiple_strategies(base_message: str, num_inferences: int) -> List[dict]:
-    """Run multiple inferences using different strategy files."""
+async def run_multiple_strategies(
+    base_message_template: str, num_inferences: int, picks, player_id: str, player_bios
+) -> List[dict]:
+    """Run multiple inferences using different strategy files and shuffled player orders."""
     print(
         f"\nRunning {num_inferences} inference{'s' if num_inferences > 1 else ''} with different strategies..."
     )
@@ -49,7 +51,21 @@ async def run_multiple_strategies(base_message: str, num_inferences: int) -> Lis
                 print(f"[Inference {i+1}] Error: No strategy files found")
                 continue
 
-        # Build the full message with this strategy
+        # Generate shuffled best available summary with unique seed per inference
+        shuffle_seed = i + 1000  # Unique seed for each inference
+        if player_bios:
+            best_available_summary = format_best_available_with_bios(
+                picks, player_id, player_bios, shuffle_seed=shuffle_seed
+            )
+        else:
+            best_available_summary = format_best_available_summary(
+                picks, player_id, shuffle_seed=shuffle_seed
+            )
+
+        # Build the full message with this strategy and shuffled players
+        base_message = base_message_template.replace(
+            "{BEST_AVAILABLE}", best_available_summary
+        )
         full_message = (
             "# CHOPPED LEAGUE DRAFT - ELIMINATION FORMAT\n\n"
             "## CRITICAL: This is a SURVIVAL league where the LOWEST scoring team each week is ELIMINATED.\n\n"
@@ -57,6 +73,14 @@ async def run_multiple_strategies(base_message: str, num_inferences: int) -> Lis
             + "\n\n"
             + base_message
         )
+
+        # Log the first inference's full message
+        if i == 0:
+            print("\n" + "=" * 80)
+            print("INFERENCE 1 MESSAGE:")
+            print("=" * 80)
+            print(full_message)
+            print("=" * 80 + "\n")
 
         # Create the task
         task = get_draft_recommendation(full_message, i + 1, strategy_file)
@@ -132,25 +156,15 @@ async def main():
     picks = api.get_draft_picks(draft_id)
     state = render_draft_state(player_id, draft_id, "chopped")
 
-    # Get best available analysis with detailed bios
-    if player_bios:
-        best_available_summary = format_best_available_with_bios(
-            picks, player_id, player_bios
-        )
-    else:
-        # Fallback to basic summary if no bios available
-        best_available_summary = format_best_available_summary(picks, player_id)
-        print("Warning: No player bios found, using basic format")
-
-    # Create base message template
-    base_message = (
+    # Create base message template with placeholder
+    base_message_template = (
         "# 🚨 LIVE DRAFT - MY PICK IS NOW! 🚨\n\n"
         + "I am currently on the clock in a LIVE DRAFT. I need to make my selection IMMEDIATELY.\n"
         + "All players shown as available ARE currently available - no one else can pick before me.\n"
         + "This is MY TURN to pick RIGHT NOW.\n\n"
         + "# Current Team:\n\n"
         + state.get(player_id, "")
-        + best_available_summary
+        + "{BEST_AVAILABLE}"  # Placeholder for shuffled best available
         + "\n\n## IMMEDIATE DRAFT DECISION REQUIRED\n\n"
         + "**IMPORTANT: Please use web search to find the most current 2025 NFL information including:**\n"
         + "- Recent injuries, suspensions, or player status updates\n"
@@ -176,7 +190,9 @@ async def main():
     )
 
     # Run multiple inferences with different strategies
-    results = await run_multiple_strategies(base_message, num_inferences)
+    results = await run_multiple_strategies(
+        base_message_template, num_inferences, picks, player_id, player_bios
+    )
 
     # Analyze results
     analysis = analyze_inference_results(results)

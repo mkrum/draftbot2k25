@@ -2,8 +2,9 @@
 """Best available players analysis using ADP rankings."""
 
 import json
+import random
 from dataclasses import dataclass
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 
 
 @dataclass
@@ -101,7 +102,9 @@ class BestAvailable:
         return position_counts
 
 
-def format_best_available_summary(draft_picks, player_slot: str) -> str:
+def format_best_available_summary(
+    draft_picks, player_slot: str, shuffle_seed: Optional[int] = None
+) -> str:
     """Create a summary of best available players for the prompt."""
 
     ba = BestAvailable()
@@ -127,9 +130,19 @@ def format_best_available_summary(draft_picks, player_slot: str) -> str:
     # Create tables for each position
     priority_positions = ["QB", "RB", "WR", "TE", "K", "DST"]
 
+    # Shuffle positions if seed provided
+    if shuffle_seed is not None:
+        rng = random.Random(shuffle_seed)
+        priority_positions = priority_positions.copy()
+        rng.shuffle(priority_positions)
+
     for pos in priority_positions:
         if pos in best_by_position and best_by_position[pos]:
-            players = best_by_position[pos]
+            players = best_by_position[pos].copy()
+
+            # Shuffle players within position if seed provided
+            if shuffle_seed is not None:
+                rng.shuffle(players)
 
             summary += f"### {pos}\n"
             summary += "| Rank | Player | Team |\n"
